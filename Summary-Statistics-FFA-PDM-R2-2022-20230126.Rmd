@@ -1,0 +1,1770 @@
+---
+title: "WFP SSCO Food For Assets (FFA) Post Distribution Monitoring (PDM) - Round 2 2022"
+author: "William McFall - WFP South Sudan RAM Officer"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: espresso
+    toc: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+    number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+subtitle: "Data Collection Conducted in June, July, and August 2022"
+---
+
+
+```{r setup, include=FALSE, fig.align = "center", fig.width= 16, fig.height= 11, fig.asp= 0.618, out.width="100%"}
+
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	cache.path = "cache/"
+)
+
+knitr::opts_knit$set(root.dir = 'XXX') 
+
+```
+
+```{r, echo=FALSE,out.width="30%", out.height="30%",fig.show='hold',fig.align='left'}
+
+# knitr::include_graphics("XXXX" )
+
+```
+
+
+```{r wfp_theme}
+
+rm(list = ls())
+
+## creates WFP theme for ggplots
+
+## https://rpubs.com/mclaire19/ggplot2-custom-themes
+## https://ggplot2.tidyverse.org/reference/theme.html
+
+theme_wfp <- function(){ 
+  font <- "Open Sans"   
+  
+  theme_minimal() %+replace%   
+    
+    theme(
+      
+      # grid elements
+      panel.grid.major = element_blank(),    
+      panel.grid.minor = element_blank(),    
+      axis.ticks = element_blank(), 
+      
+      # text elements
+      plot.title = element_text(
+        family = font,            
+        size = 20,                
+        face = 'bold',            
+        colour = 'black',         
+        hjust = 0),               
+      
+      #subtitle elements
+      plot.subtitle = element_text(   
+        family = font,            
+        colour = 'grey',
+        size = 16,
+        face = 'bold'),               
+      
+      #legend elements
+      legend.title = element_text(
+        family = font,            
+        colour = 'black',
+        size = 14,
+        face = 'bold'
+      ),
+      
+      # caption elements
+      plot.caption = element_text(           
+        family = font,           
+        size = 9,                 
+        hjust = 1),               
+      
+      # axis title elements
+      axis.title = element_text(             
+        family = font,
+        face = 'bold', 
+        size = 12),               
+      
+      # axis text elements
+      axis.text = element_text(              
+        family = font,            
+        size = 12),                
+      
+      # axis text margins
+      axis.text.x = element_text(           
+        margin=margin(10, b = 10))
+      
+    )
+}
+
+
+```
+
+```{r load_packages}
+
+setwd('XXXX')
+
+library(gtsummary)
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(tidyr)
+library(mosaic)
+library(tidyverse)
+library(modelsummary)
+library(kableExtra) 
+library(foreign)
+library(arsenal)
+library(desctable)
+library(survey)
+library(srvyr) 
+library(naniar)
+library(rmarkdown)
+library(haven)
+library(labelled)
+library(sjlabelled)
+# library(xlsx)
+library(rlang)
+library(skimr)
+library(ggrepel)
+library(janitor)
+library(skimr)
+library(gt)
+library(ggmap)
+
+## sessionInfo()
+## https://www.ibm.com/support/pages/setting-missing-values-string-variables
+
+```
+
+```{r data_import}
+
+## import pdm data
+ffa_pdm_data <- read.spss("./Data Input/data.sav", use.value.labels = TRUE, to.data.frame = TRUE, use.missings = TRUE) 
+
+
+ffa_pdm_data %>% filter(a_activity == "FFA activities") -> ffa_pdm_data
+
+```
+
+
+```{r selected_data}
+
+
+# "comeaten", "comsold","w_buyer","comexchanged", "comshared", "comtaxed" "comlasted", "commoredays", "comquality", "comqty", "compreftype", "comprep", "comeater","cashv_value", "cashv_food", "cashv_debts":"cashv_taxed","totalcashvuse", "totalcashvremainder","cashv_remainderplan":"cashv_redeem","comlasted", "commoredays", # "comquality", "comqty", "compreftype", "comprep", "comeater","cashv_value", "cashv_food", "cashv_debts":"cashv_taxed","totalcashvuse", "totalcashvremainder","cashv_remainderplan":"cashv_redeem", "totalfooduse", "totalfoodremainder", 
+
+##########################
+## Creates dummy variable for household disability status
+##########################
+
+ffa_pdm_data$hh_disability <- "No"
+ffa_pdm_data$hh_disability[ffa_pdm_data$c_hh_disable > 0] <- "Yes"
+# table(ffa_pdm_data$hh_disability)
+
+
+##########################
+## Creates dummy variable for household head elderly status
+##########################
+
+ffa_pdm_data$hh_head_elderly <- 0
+ffa_pdm_data$hh_head_elderly[ffa_pdm_data$head_age > 59] <- 1
+# table(ffa_pdm_data$hh_head_elderly)
+
+
+##########################
+## Creates categorical variable for household head sex
+##########################
+
+ffa_pdm_data %>% mutate(hh_head_sex = case_when(respdnt_ishead == "No" & head_sex == "Male" ~ "Male", respdnt_ishead == "No" & head_sex == "Female" ~ "Female", respdnt_ishead == "Yes" & respdnt_sex == "Male" ~ "Male", respdnt_ishead == "Yes" & respdnt_sex == "Female" ~ "Female")) -> ffa_pdm_data
+# table(ffa_pdm_data$hh_head_sex)
+
+
+##########################
+## Creates categorical variable for rCSI
+##########################
+
+ffa_pdm_data %>% mutate(rcsi = ifelse(is.na(rcsi), 0, rcsi)) -> ffa_pdm_data
+
+ffa_pdm_data %>% mutate(rcsi_yn_t_cs7a = case_when(t_cs7a > 0 & t_cs7a <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7b = case_when(t_cs7b > 0 & t_cs7b <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7c = case_when(t_cs7c > 0 & t_cs7c <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7d = case_when(t_cs7d > 0 & t_cs7d <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7e = case_when(t_cs7e > 0 & t_cs7e <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7wf = case_when(t_cs7wf > 0 & t_cs7wf <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7wg = case_when(t_cs7wg > 0 & t_cs7wg <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0),
+                        rcsi_yn_t_cs7wh = case_when(t_cs7wh > 0 & t_cs7wh <= 7 ~ 1, cs_screening == 0 ~ 0, TRUE ~ 0)) -> ffa_pdm_data
+
+
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7a, useNA = "ifany"))
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7b, useNA = "ifany"))
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7c, useNA = "ifany"))
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7d, useNA = "ifany"))
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7e, useNA = "ifany"))
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7wf, useNA = "ifany")
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7wg, useNA = "ifany"))
+# prop.table(table(ffa_pdm_data$rcsi_yn_t_cs7wh, useNA = "ifany"))
+
+
+# table(ffa_pdm_data$rcsi, useNA = "ifany")
+# mean(ffa_pdm_data$rcsi)
+# 
+# table(ffa_pdm_data$rcsig, useNA = "ifany")
+
+
+##########################
+## Creates asset benefit index 
+##########################
+
+ffa_pdm_data %>% mutate(e_ffa_abi_1_yn = case_when(e_ffa_abi_1 == "Fully" ~ 1, e_ffa_abi_1 == "Partially" ~ 1, e_ffa_abi_1 == "No" ~ 0), e_ffa_abi_2_yn = case_when(e_ffa_abi_2 == "Fully" ~ 1, e_ffa_abi_2 == "Partially" ~ 1, e_ffa_abi_2 == "No" ~ 0), e_ffa_abi_3_yn = case_when(e_ffa_abi_3 == "Fully" ~ 1, e_ffa_abi_3 == "Partially" ~ 1, e_ffa_abi_3 == "No" ~ 0), e_ffa_abi_4_yn = case_when(e_ffa_abi_4 == "Fully" ~ 1, e_ffa_abi_4 == "Partially" ~ 1, e_ffa_abi_4 == "No" ~ 0), e_ffa_abi_5_yn = case_when(e_ffa_abi_5 == "Fully" ~ 1, e_ffa_abi_5 == "Partially" ~ 1, e_ffa_abi_5 == "No" ~ 0), e_ffa_abi_6_yn = case_when(e_ffa_abi_6 == "Fully" ~ 1, e_ffa_abi_6 == "Partially" ~ 1, e_ffa_abi_6 == "No" ~ 0), e_ffa_abi_sum = (e_ffa_abi_1_yn + e_ffa_abi_2_yn + e_ffa_abi_3_yn + e_ffa_abi_4_yn + e_ffa_abi_5_yn + e_ffa_abi_6_yn), e_ffa_abi_percent = e_ffa_abi_sum/6) -> ffa_pdm_data
+
+# trims white space from field office variable
+ffa_pdm_data$a_suboffice <- trimws(ffa_pdm_data$a_suboffice, which = c("both"))
+ffa_pdm_data$ffa <- trimws(ffa_pdm_data$ffa, which = c("both"))
+ffa_pdm_data$fexcari <- trimws(ffa_pdm_data$fexcari, which = c("both"))
+ffa_pdm_data$fexcari <- as.numeric(ffa_pdm_data$fexcari) 
+ffa_pdm_data$totalcashvremainder <- as.numeric(ffa_pdm_data$totalcashvremainder) 
+ffa_pdm_data$totalcashvuse <- as.numeric(ffa_pdm_data$totalcashvuse) 
+
+table(ffa_pdm_data$a_county)
+
+library(gmodels)
+
+# recodes field office variable into new variable
+ffa_pdm_data$a_suboffice_class <- NA
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W01"] <- "Abyei"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W02"] <- "Aweii"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W03"] <- "Bentiu"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W04"] <- "Bor"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W05"] <- "Juba"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W06"] <- "Kapoeta"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W07"] <- "Kuajok"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W08"] <- "Maban"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W09"] <- "Malakal"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W10"] <- "Mingkaman"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W11"] <- "Rumbek"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W12"] <- "Torit"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W13"] <- "Wau"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W14"] <- "Yambio"
+ffa_pdm_data$a_suboffice_class[ffa_pdm_data$a_suboffice == "W15"] <- "Yida"
+
+
+
+
+
+# glimpse(ffa_pdm_data)
+
+# select and label relevant variables
+selected_ffa_data <- ffa_pdm_data %>% select(c("start", "a_state", "a_suboffice_class", "a_cpi", "a_context", "assist_received", "assist_received_why", "assist_modality", "assist_voucher_type", "assist_milling_type", "assist_rationsize","head_age", "head_marital","c_hh_orphaned","c_hh_minors", "ffa_mainpart":"hh_size", "c_s_ag1m":"c_s_ag5m","c_card":"c_matchcard_no","c_hh_ill":"c_provider_ill","c_hh_disable":"c_provider_disable","d_bsfpplw":"d_card_lost", "d_bsfp_missed":"d_bsfp_reason","d_tsfpplw":"d_tsfpu5","e_pillar.1":"e_pillar.4","e_activity_p1.101","e_activity_p1.102","e_activity_p1.103","e_activity_p1.104","e_activity_p1.105","e_activity_p1.106","e_activity_p2.201","e_activity_p2.202","e_activity_p2.203","e_activity_p2.204","e_activity_p2.205","e_activity_p2.206","e_activity_p2.207","e_activity_p2.208","e_activity_p2.209","e_activity_p2.210","e_training.1":"e_training.88", "e_activity_p3.301","e_activity_p3.302","e_training_yn","e_activity_p3.303","e_activity_p3.304","e_activity_p3.305","e_ffa_abi_1":"e_ffa_ebi_3","e_ffa_abi_shock_hh", "e_ffa_abi_shock_com","e_training_yn","e_activity_p4.401":"e_activity_p4.488","e_training_improve","e_assets_change","relationship_other":"better_rel","d_criteria","d_criteria_selection.101":"d_criteria_selection.88","d_bens_selection.1":"d_bens_selection.88","d_asst_sel","d_ben_mis","d_hh_pay":"d_fam_har","grad_comm","grad_who_comm":"consulted_involved","e_mod_pref","f_entitled_all":"f_comm","f_sameday", "f_waitminutes","f_return_time","f_site_access", "assist_end","comType.1":"comType.7","cashv_value","cashv_food","cashv_debts":"cashv_redeem","assist_end","assistance_effect","assist_fromhh",
+"assist_fromorg","pay_entitlement","pay_purpose","safetly_lev","safety_communt","j_security","j_access","j_tax","k_info":"k_cfm_aware","k_cfmpref.1":"k_cfmpref.88","k_complaint","k_nocomplaint.1":"k_nocomplaint.88","k_response":"k_topics","k_treatment","k_sites_degnity","k_measures_taken","k_sites_degnity_issues.1":"k_sites_degnity_issues.88","l_pmc","l_pmc_not","l_pmc_rpt":"l_pmc_rep_group","pmc_satisfied","pmc_role_future","m_use_food","m_use_cash","m_use_cash","m_top_gender","o_acc_med":"o_cnv_where", "o_asst_adq":"o_nt_why","o_cnv_presence", "o_msg_nh","dmp_2":"dmp_6", "meals_infants", "meals_children","meals_adults","Cereal", "Pulses", "Dairy", "Meat", "Veges", "Fruits", "VegOil", "Sugar","fcs","fcsg","fcsVitag", "fcsProtein", "fcshemeiron", "dds","ddsg", "mddw","cari","lcsi","rcsi","rcsig","N08":"N17","t_cs7a":"t_cs7wh","srcfortified","h_message",'h_water','h_watermin','h_latrine','h_latrinemin','h_latrineaccess1','h_latrineaccess2','h_soap','c_house','c_house_own','H01','H01_1','H01_2.1':"H01_2.17",'H02','H02_1','H03','H04.1':'H04.0','g_garden','g_why_no_plant','g_veg_area','farm_animal','cattle_own','cattle_more','goat_own','goat_more','chicken_own','chicken_more','livestock_mainuse','livestock_conflict','livestock_futureplan','assets_threats','assets_threats_investment','harvest_storage','storage_type_harvest','harvest_storageffa','prevent_loss','postharvest_training','postharvest_training_no','training_implement','change_post_training','loss_increase',"total_fooditems","total_nonfooditems",'mkt_access','mkt_distance','mkt_availability':'mkt_distributiontrader','s_shockrecovery','s_shock.1':'s_shock.0',"sers_1":"sers_9","collect_fruits","firewood_fruits","insecurity_women","insecurity_frequency","type_insecurity", "road_use","travel_large","travel_large_safety","travel_day_night","household_feltfree","hh_notfeltfree","graze_cattle","youths_spend","children_home","children_travel","social_event","person_travel","stay_where","whynot_travel","heard_marriage","village_incidents","age_viollence","how_often","child_sleptout","hh_tradingactivities","trading_where","trading_frequency","trading_whichcommunity","boys_lookcattle","hh_accessedfarm","courts_working","accepted.aag1._v_coord_latitude", "accepted.aag1._v_coord_longitude", "hh_head_sex", "hh_disability","hh_head_elderly", "e_ffa_abi_percent", "rcsi_yn_t_cs7a":"rcsi_yn_t_cs7wh")) %>% mutate(total_fooditems = as.numeric(total_fooditems), total_nonfooditems = as.numeric(total_nonfooditems))
+
+
+## drop unused levels
+droplevels(selected_ffa_data$assist_modality) -> selected_ffa_data$assist_modality
+droplevels(selected_ffa_data$a_cpi) -> selected_ffa_data$a_cpi
+droplevels(selected_ffa_data$a_state) -> selected_ffa_data$a_state
+
+# labels variables with relevant variable name
+var_label(selected_ffa_data) <- list('a_state' = 'A02: State',
+                                     'a_suboffice_class' = 'A05: Field Office',
+                                     'a_context' = 'A08: Are you conducting this interview inside a community village or IDP/Refugee Camp?',
+                                     'a_cpi' = 'A15: Which partner is implementing this activity in this area?',
+                                     'assist_received' = 'B05: Did your household receive WFP assistance during the last three months?',
+                                     'assist_received_why' = 'B06: Why did you not receive any assistance during the last three months?',
+                                     'assist_modality' = 'B08: Which assistance modality did you receive during the last distribution?',
+                                     'assist_voucher_type' = 'B09: Type of e-vouchers received',
+                                      'assist_milling_type' = 'B10: Did you also receive a milling top-up (cash or voucher)?',
+                                      'assist_rationsize' = 'B12: Was the assistance you received recently a double or single ration?',
+                                      'hh_head_sex' = 'C01: What is the sex of the head of household?',
+                                      'head_age' = 'C02: What is the approximate age of the head of household?',
+                                      'head_marital' = 'C03: What is the household heads marital status?',
+                                      'ffa_mainpart' = 'C06: Who is the main FFA participant in your household?',
+                                      'ffa_mainpart_age' = 'C07: How old is the main FFA participant?',
+                                      'ffa_mainpart_year' = 'C08: How many years have you (or main participant) been participating in FFA for?',
+                                      'hh_size' = 'C09: What is the size of the HH ?',
+                                      'c_s_ag1m' = 'C10: Girls aged 0-2 years',
+                                      'c_s_ag1f' = 'C10: Boys aged 0-2 years',
+                                      'c_s_ag2m' = 'C10: Girls aged 3-5 years',
+                                      'c_s_ag2f' = 'C10: Boys aged 3-5 years',
+                                      'c_s_ag3f' = 'C10: Female aged 6-17 years',
+                                      'c_s_ag3m' = 'C10: Male aged 6-17 years',
+                                      'c_s_ag4f' = 'C10: Female aged 18-59 years',
+                                      'c_s_ag4m' = 'C10: Male aged 18-59 years',
+                                      'c_s_ag5f' = 'C10: Female over 60 years',
+                                      'c_s_ag5m' = 'C10: Male over 60 years',
+                                      'c_card' = 'C11: Does the household have an entitlement/scope card?',
+                                      'c_nocard' = 'C12: What happened to your card?',
+                                      'c_matchcard' = 'C13: Does the card match the household breakdown provided in previous section?',
+                                      'c_matchcard_no' = 'C14: What are the observed discrepancies',
+                                      'c_hh_ill' = 'C15: Is any of your household members chronically ill?',
+                                      'c_head_ill' = 'C15.01: Is the head of household among these people with chronic illness?',
+                                      'c_provider_ill' = 'C15.02: Is the households primary provider among these people with chronic illness?',
+                                      'c_hh_disable' = 'C16: How many member of your household need help due to long-term difficulties with any of the following? seeing, hearing, communication/ understanding, walking, climbing stairs, dressing or washing?',
+                                      'c_head_disable' = 'C16.01: Is the head of household among these people living with long-term difficulties?',
+                                      'c_provider_disable' = 'C16.02: Is the households primary provider among these people living with long-term difficulties?', 'c_hh_orphaned' = 'C18: Is there any "orphaned child" in the household?', 
+                                      'c_hh_minors' = 'C17: Is there any unaccompanied minors in your household?',
+                                      'd_bsfpplw' = 'D01: Is any of these [${c_hh_plw}] pregnant and or lactating women currently receiving a special nutritious ration?',
+                                      'd_bsfpu5' = 'D02: Is any of these [${n_u5}] children under 5years in your household currently receiving a special nutritious ration?',
+                                      'd_bsfp_plan_ben' = 'D03: How many distribution were you told you will participate in?',
+                                      'd_bsfp_actual_ben' = 'D04: How many distribution have you participated in so far?',
+                                      'd_bsfp_card' = 'D05: If you have a beneficiary ration card for the special nutritious ration, may I please see it?',
+                                      'd_bsfp_plan_en' = 'D06: [Enumerator] from the card record number of planned distributions',
+                                      'd_bsfp_actual_en' = 'D07: [Enumerator] from the card record number of actual attended distributions',
+                                      'd_card_lost' = 'D08: Why do you not have a beneficiary ration/scope card?',
+                                      'd_bsfp_missed' = 'D10: Did you miss any planned distribution?',
+                                      'd_bsfp_reason' = 'D11: What were the reasons of missing some of the planned distributions?',
+                                      'd_tsfpplw' = 'D13: Is any of the pregnant and or lactating women in your household currently benefiting from malnutrition treatment programme (TSFP)',
+                                      'd_tsfpu5' = 'D14: Is any of the U5 children in your household currently benefiting from malnutrition treatment programme (TSFP)',
+                                      'e_pillar.1' = 'E01: Under which pillar of F/CFA is this assets activity being implemented? - Pillar 1',
+                                      'e_pillar.2' = 'E01: Under which pillar of F/CFA is this assets activity being implemented? - Pillar 2',
+                                      'e_pillar.3' = 'E01: Under which pillar of F/CFA is this assets activity being implemented? - Pillar 3',
+                                      'e_pillar.4' = 'E01: Under which pillar of F/CFA is this assets activity being implemented? - Pillar 4',
+                                      'e_activity_p1.101' = 'E02.1: Exact activity / asset being implemented? - Land clearing and plantation',
+                                      'e_activity_p1.102' = 'E02.1: Exact activity / asset being implemented? - Vegetable gardening',
+                                      'e_activity_p1.103' = 'E02.1: Exact activity / asset being implemented? - Compost preparation',
+                                      'e_activity_p1.104' = 'E02.1: Exact activity / asset being implemented? - Construction of solar driers',
+                                      'e_activity_p1.105' = 'E02.1: Exact activity / asset being implemented? - Construction of grain stores',
+                                      'e_activity_p1.106' = 'E02.1: Exact activity / asset being implemented? - Beekeeping',
+                                      'e_activity_p2.201' = 'E02.2: Exact activity / asset being implemented? - Community access road construction', 
+                                      'e_activity_p2.202' = 'E02.2: Exact activity / asset being implemented? - Dyke construction (roads)', 
+                                      'e_activity_p2.203' = 'E02.2: Exact activity / asset being implemented? - Multi-purpose water pond construction', 
+                                      'e_activity_p2.204' = 'E02.2: Exact activity / asset being implemented? - Fish pond construction', 
+                                      'e_activity_p2.205' = 'E02.2: Exact activity / asset being implemented? - Shallow wells construction', 
+                                      'e_activity_p2.206' = 'E02.2: Exact activity / asset being implemented? - School class room construction', 
+                                      'e_activity_p2.207' = 'E02.2: Exact activity / asset being implemented? - Youth centre', 
+                                      'e_activity_p2.208' = 'E02.2: Exact activity / asset being implemented? - Clinic',
+                                      'e_activity_p2.209' = 'E02.2: Exact activity / asset being implemented? - Grain store', 
+                                      'e_activity_p2.210' = 'E02.2: Exact activity / asset being implemented? - Nutrition centre',
+                                      'e_activity_p3.301' = 'E02.3: Exact activity / asset being implemented? - Tree nursery - seedling production/plantation',    
+                                      'e_activity_p3.302' = 'E02.3: Exact activity / asset being implemented? - Seedling pit excavation',   
+                                      'e_activity_p3.303' = 'E02.3: Exact activity / asset being implemented? - Dyke construction (flood-control)',   
+                                      'e_activity_p3.304' = 'E02.3: Exact activity / asset being implemented? - Vetiver multiplication',
+                                      'e_activity_p3.305' = 'E02.3: Exact activity / asset being implemented? - Other',
+                                      'e_activity_p4.401' = 'E02.4: Exact activity / asset being implemented? - Training in Livelihood Development',
+                                      'e_activity_p4.402' = 'E02.4: Exact activity / asset being implemented? - Training in Infrastructure Development',
+                                      'e_activity_p4.403' = 'E02.4: Exact activity / asset being implemented? - Training in Environmental Rehabilitation',
+                                      'e_activity_p4.404' = 'E02.4: Exact activity / asset being implemented? - Training in Cross-Cutting Issues',
+                                      'e_activity_p4.488' = 'E02.4: Exact activity / asset being implemented? - Other',
+                                      'e_ffa_abi_1' = 'E06: FFA ABI 1 - Are better protecting your household, its belongings and its production capacities (fields, equipment, etc.) from floods / drought / landslides / mudslides?',
+                                      'e_ffa_abi_2' = 'E06: FFA ABI 2 - Have allowed your household to increase or diversify its production (agriculture / livestock / other)?',
+                                      'e_ffa_abi_3' = 'E06: FFA ABI 3 - Have decreased the day-to-day hardship and released time for any of your family members (including women and children)?',
+                                      'e_ffa_abi_4' = 'E06: FFA ABI 4 - Have improved the ability of any of your household member to access markets and/or basic services ?',
+                                      'e_ffa_abi_5' = 'E06: FFA ABI 5 - Have improved your household’s ability to manage and maintain assets?',
+                                      'e_ffa_abi_6' = 'E06: FFA ABI 6 - Have improved your natural environment?',
+                                      'e_ffa_abi_shock_hh' = 'E06: FFA ABI Shock - Have changed conflicts and violence at household level?',
+                                      'e_ffa_abi_shock_com' = 'E06: FFA ABI Shock - Have changed conflicts and violence at community level?',
+                                      'e_ffa_abi_percent' = 'ABI Index - Percentage',
+                                      'e_ffa_ebi_1' = 'E06: FFA EBI 1 - Have allowed to increase agricultural potential due to greater water availability and/or soil fertility?',
+                                      'e_ffa_ebi_2' = 'E06: FFA EBI 2 - Have improved natural environment due to land stabilization and restoration?',
+                                      'e_ffa_ebi_3' = 'E06: FFA EBI 3 - Have improved environmental surroundings due to the enhanced water and sanitation measures?',
+                                      'e_training_yn' = 'E07: Have you received supplementary training on the FFA activity you participating in?',
+                                      'e_training.1' = 'E08: What type of training or skill development have you received? - Establishment of nurseries and seedling production',
+                                      'e_training.2' = 'E08: What type of training or skill development have you received? - Seedling planting including fruit trees',
+                                      'e_training.3' = 'E08: What type of training or skill development have you received? - Development of flood control dykes',
+                                      'e_training.4' = 'E08: What type of training or skill development have you received? - Improved technologies on livelihood activities',
+                                      'e_training.5' = 'E08: What type of training or skill development have you received? - Environmental issues',
+                                      'e_training.6' = 'E08: What type of training or skill development have you received? - Project management',
+                                      'e_training.88' = 'E08: What type of training or skill development have you received? - Other',
+                                      'e_training_improve' = 'E09: Has the training helped in improving your livelihoods, increasing and diversification of asset portfolie?',
+                                      'e_assets_change' = 'E10: How has the assets created through the activities changed your livelihoods',
+                                      'relationship_other' = 'E11: How do you perceive your relationships with other groups?',
+                                      'incl_excl' = 'E12: Do you feel you are included in or excluded from your community structure?',
+                                      'better_rel' = 'E13: Do you think the cooperation and inclusion of other groups would promote cooperation and better social relationships among the entire community?',
+                                      'd_criteria' = 'F01: Do you know how people were chosen to receive assistance?',
+                                      'd_criteria_selection.101' = 'F02: How people were selected? - Families with children under 5 years on malnutrition treatment',
+                                      'd_criteria_selection.102' = 'F02: How people were selected? - Families with pregnant and/or lactating Women on malnutrition treatment',
+                                      'd_criteria_selection.103' = 'F02: How people were selected? - Families headed by children',
+                                      'd_criteria_selection.104' = 'F02: How people were selected? - Families with low income or headed by vulnerables',
+                                      'd_criteria_selection.105' = 'F02: How people were selected? - Food insecure housheolds',
+                                      'd_criteria_selection.106' = 'F02: How people were selected? - Families with high dependency ratio or with very few income earning members',
+                                      'd_criteria_selection.201' = 'F02: How people were selected? - Households with a high dependency ratio',
+                                      'd_criteria_selection.202' = 'F02: How people were selected? - Female-headed households (recently widowed/abandoned)',
+                                      'd_criteria_selection.203' = 'F02: How people were selected? - Households a member discharged/cured from an OTP/TSFP',
+                                      'd_criteria_selection.204' = 'F02: How people were selected? - Households with chronically ill/disabled members',
+                                      'd_criteria_selection.205' = 'F02: How people were selected? - Split up households (food scarcity)',
+                                      'd_criteria_selection.206' = 'F02: How people were selected? - Households facing zero-sum coping',
+                                      'd_criteria_selection.207' = 'F02: How people were selected? - Households without access to productive assets',
+                                      'd_criteria_selection.208' = 'F02: How people were selected? - Daily wage-earners or households with no reliable income',
+                                      'd_criteria_selection.88' = 'F02: How people were selected? - Other CBPP defined criteria',
+                                      'd_bens_selection.1' = 'F06: Who selected the people to receive assistance? - Community/traditional leader',
+                                      'd_bens_selection.2' = 'F06: Who selected the people to receive assistance? - Distribution staff',
+                                      'd_bens_selection.3' = 'F06: Who selected the people to receive assistance? - Local Authorities',
+                                      'd_bens_selection.4' = 'F06: Who selected the people to receive assistance? - Management committee',
+                                      'd_bens_selection.5' = 'F06: Who selected the people to receive assistance? - Partner',
+                                      'd_bens_selection.6' = 'F06: Who selected the people to receive assistance? - WFP',
+                                      'd_bens_selection.77' = 'F06: Who selected the people to receive assistance? - I do not know',
+                                      'd_bens_selection.88' = 'F06: Who selected the people to receive assistance? - Other',
+                                      'd_asst_sel' = 'F08: Do you know of people who were selected but did not merit to be assisted?',
+                                      'd_ben_mis' = 'F10: Do you know of people who deserved assistance but were not selected?',
+                                      'd_hh_pay' = 'F13: Did your household have to pay to be selected?',
+                                      'd_hh_pay1' = 'F14: Who did you have to pay?',
+                                      'd_hh_pay2' = 'F15: Was this payment made voluntarily or forced?',
+                                      'd_fam_har' = 'F16: Have you or any of your family members been harassed as a result of being selected?',
+                                      'grad_comm' = 'F18: Were the graduation criteria clearly communicated to you?',
+                                      'grad_who_comm' = 'F20: Who provided you with this information?',
+                                      'grad_comm_pref' = 'F21: How would you have preferred to provide you with information on graduation?',
+                                      'consulted_involved' = 'F22: Are you consulted/involved in project decision making throughout or at any point during the project cycle?',
+                                      'e_mod_pref' = 'G01: If you were able to choose, in what form would you most prefer to receive your entitlement?',
+                                      'f_entitled_all' = 'H01: Have you been told exactly what you are entitled to receive?',
+                                      'f_daylight' = 'H02: For the last distribution, were you able to collect your food and return home in one day?',
+                                      'f_comm' = 'H03: Were you informed when to go to collect your assistance?',
+                                      'f_sameday' = 'H06: Did you arrive on the day you were scheduled to receive your entitlement?',
+                                      'f_waitminutes' = 'H07: Once the distribution began, how long did you have to wait to receive your entitlement/ration?',
+                                      'f_return_time' = 'H08: How long does it take to get from the distribution point to your home?',
+                                      'f_site_access' = 'H10: Did you or other family member who collects the entitlement experienced any difficulty in accessing the site?',
+                                      'assist_end' = 'H15: Do you know when the assistance and programme you are participating in will end?',
+                                      'comType.1' = 'H17: Which standard commodities were part of your last ration? - Cereals',
+                                      'comType.2' = 'H17: Which standard commodities were part of your last ration? - Pulses',
+                                      'comType.3' = 'H17: Which standard commodities were part of your last ration? - Vegetable Oil',
+                                      'comType.4' = 'H17: Which standard commodities were part of your last ration? - Salt',
+                                      'comType.5' = 'H17: Which standard commodities were part of your last ration? - CSB++',
+                                      'comType.6' = 'H17: Which standard commodities were part of your last ration? - Plumpy Sup/Acha Mum',
+                                      'comType.7' = 'H17: Which standard commodities were part of your last ration? - LNS-MQ',
+                                      'cashv_value' = 'H36: How much money in SSP did you receive as ${cashorv} assistance the last distribution?',
+                                      'cashv_food' = 'H37: How much was spent in buying food items for home consumptions?',
+                                      'cashv_debts' = 'H39: How much was spent in paying owed depts?',
+                                      'cashv_nfiserv' = 'H40: How much did you spend in acquiring other non-food needs (goods and services)?',
+                                      'cashv_shared' = 'H41: How much did you use/give/share to support your families or other households?',
+                                      'cashv_taxed' = 'H42: How much did you have to give to local authorities (voluntary or forced)?',
+                                      'totalcashvuse' = 'HXX: Total used cash or voucher value',
+                                      'totalcashvremainder' = 'HXX: Total remaining cash or voucher value',
+                                      'cashv_remainderplan' = 'H43: What do you plan to use the remainder ${cashorv} for?',
+                                      'cashv_moredays' = 'H44: From today, how many more days will you be able to use the remaining ${cashorv} ration before it is finished?',
+                                      'cashv_lasted' = 'H45: How many days did the ${cashorv} received last?',
+                                      'cashv_qtysatisfied' = 'H46: How do you find the the amount of ${cashorv} received?',
+                                      'cashv_redeem' = 'H47: Did you face any problems while redeeming receiving vouchers?',
+                                      'pay_entitlement' = 'J01: Did you or anyone in your household have to give away part of your ration after receiving it?',
+                                      'pay_purpose' = 'J02: What was the purpose of giving this part of your ration away?',
+                                      'safetly_lev' = 'J11: How would you rate the level of safety you experienced when traveling to and from, or taking part in WFP’s programmes?',
+                                      'safety_communt' = 'J12: Have you heard of safety problems experienced by your community on the way to and from, or at WFP programme sites?',
+                                      'j_security' = 'J17: Has anyone from your household experienced issues of insecurity due to receiving the food/distribution?',
+                                      'j_tax' = 'J38: Was anyone observed collecting food, vouchers, or cash as a form of tax from beneficiaries?',
+                                      'k_info' = 'K01: Were you informed about the quantities of each commodity / cash / vouchers you received and for how long it should last?',
+                                      'k_comm' = 'K02: Have you been asked how you prefer to receive news of the distribution or other information?',
+                                      'k_cfm_aware' = 'K03: Do you know where to complain or provide feedback regarding the food assistance?',
+                                      'k_cfmpref.1' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Community/traditional leader',
+                                      'k_cfmpref.2' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Hotline',
+                                      'k_cfmpref.3' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Project management committee (PMC)',
+                                      'k_cfmpref.4' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Help desk at site',
+                                      'k_cfmpref.5' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Local authorities',
+                                      'k_cfmpref.6' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Cooperating partner',
+                                      'k_cfmpref.7' = 'K04: If you were to give feedback, what would be your preferred mechanism? - WFP',
+                                      'k_cfmpref.88' = 'K04: If you were to give feedback, what would be your preferred mechanism? - Other',
+                                      'k_complaint' = 'K06: Have you ever provided feedback or complained about any aspect of the assistance?',
+                                      'k_nocomplaint.1' = "K07: Why haven't you provided feedback or complained? - Afraid to complain",
+                                      'k_nocomplaint.2' = "K07: Why haven't you provided feedback or complained? - No anonymity, everyone will know I went",
+                                      'k_nocomplaint.3' = "K07: Why haven't you provided feedback or complained? - No neutrality, I may get into trouble",
+                                      'k_nocomplaint.4' = "K07: Why haven't you provided feedback or complained? - No resolutions to complaining, nothing will be done even if I complain",
+                                      'k_nocomplaint.5' = "K07: Why haven't you provided feedback or complained? - Not accessible, it is too far to go to complain",
+                                      'k_nocomplaint.6' = "K07: Why haven't you provided feedback or complained? - Nothing to complain about",
+                                      'k_nocomplaint.8' = "K07: Why haven't you provided feedback or complained? - As a female, I do not feel comfortable complaining",
+                                      'k_nocomplaint.88' = "K07: Why haven't you provided feedback or complained? - Other",
+                                      'k_response' = 'K11: Did you receive a response?',
+                                      'k_fastresponse' = 'K12: Were you provided with an immediate response?',
+                                      'k_daysresponse' = 'K13: In how many days did you receive a response?',
+                                      'k_resolved' = 'K14: Was your feedback/complaint adequately resolved by WFP or its Cooperating Partners (NGOs)?',
+                                      'k_topics' = 'K15: Are topics related to communications methods and preferences or protection discussed at the site?',
+                                      'k_treatment' = 'K16: Do you think WFP and/or partner staff have treated you and members of your household respectfully?',
+                                      'k_sites_degnity' = 'K20: Do you think the conditions of WFP programme sites are dignified?',
+                                      'k_measures_taken' = 'K23: Have WFP and/or its partners already taken measures to try to resolve the problem?',
+                                      'k_sites_degnity_issues.1' = 'K21: Site Dignity Issue - Lack of shade',
+                                      'k_sites_degnity_issues.2' = 'K21: Site Dignity Issue - Lack of toilet facilities',
+                                      'k_sites_degnity_issues.3' = 'K21: Site Dignity Issue - Lack of private spaces for lactating mothers',
+                                      'k_sites_degnity_issues.4' = 'K21: Site Dignity Issue - Lack of crowd control measures',
+                                      'k_sites_degnity_issues.5' = 'K21: Site Dignity Issue - Long waiting time',
+                                      'k_sites_degnity_issues.6' = 'K21: Site Dignity Issue - Long travel times',
+                                      'k_sites_degnity_issues.7' = 'K21: Site Dignity Issue - Timing',
+                                      'l_pmc'='L01: Is there a project management committee (PMC) for the assistance provided?',
+                                     'l_pmc_not'='L05: Why is there not a project management committee?',
+                                     'l_pmc_rpt'='L06: Does the PMC report back to the beneficiaries and/or community?',
+                                     'l_pmc_prvg'='L07: Is it easy for the PMC members to take additional food/cash/vouchers (beyond the entitlement)?',
+                                     'l_pmc_rep'='L08: Do you feel the PMC represents you well?',
+                                     'l_pmc_rep_group'='L09: Do you feel other socio-economic groups interests (such as youth and local interest groups) are well represented in the PMC?',
+                                     'pmc_satisfied'='LXX: Do you feel satisfied with PMCs decision-making roles?',
+                                     'pmc_role_future'='LXX: Should the future role of the PMCs be maintained (remain the same) or be improved in the future?',
+                                     'm_use_food'='M02: Who decides how to use the **food** assistance given by WFP, such as whether to sell, trade, lend or share a portion of it?',
+                                     'm_use_cash'='M01: Who decides how to use the **cash** assistance received such as when, where and what to buy?',
+                                     'm_top_gender'= 'M03: Are topics related to gender equality discussed at the site?',
+                                     'dmp_2'='M04: Are you participating in any meetings or discussions of how to use community assets?',
+                                     'dmp_3'='M05: Have you been consulted or involved in project decision-making throughout or at any point during the project cycle? ',
+                                     'dmp_4'='M06: Are you able to make use of community assets?',
+                                     'dmp_5'='M07: Do you feel you have a voice to contribute to positive changes in your community?',
+                                     'dmp_6'='M08: What are the challenges in being able to participate in decision-making?',
+                                     'o_acc_med'='N01: Do you have access to health services and medicines?',
+                                     'o_top_disc'='N02: Are topics related to nutrition, health, or maternal/child feeding discussed at the site?',
+                                     'o_cnv_asst'='N03: Has a community nutrition volunteer (CNV) assisted you in the past month?',
+                                     'o_cnv_where'='N04: Where did the CNV assist you?',
+                                     'o_asst_adq'='N06: Was the assistance adequate?',
+                                     'o_nt_why'='N07: Why was the assistance inadequate?',
+                                     'o_cnv_presence'='N09: During the last distribution, were CNVs present at the site?',
+                                     'o_msg_nh'='N10: Did you receive any health or nutrition messages this year?',
+                                     'h_message'='O01: Is messaging related to water, sanitation, or hygiene provided at the site?',
+                                     'h_water'='O02: Are you able to access a clean and safe water source?',
+                                     'h_watermin'='O03: In minutes, how long does it take to walk to the nearest clean and safe water source?',
+                                     'h_latrine'='O04: Are all your family members able to access a clean and safe latrine?',
+                                     'h_latrinemin'='O05: In minutes, how long does it take to walk to the nearest clean and safe latrine?',
+                                     'h_latrineaccess1'='O06: Is accessing these latrines an issue for any particular household member?',
+                                     'h_latrineaccess2'='O07: For whom is access to the latrines most difficult?',
+                                     'h_soap'='O08: Do you have access to soap as you need it?',
+                                     'c_house'='P10: What type of structure do you normally sleep in now?',
+                                     'c_house_own'='P12: Do you own this structure?',
+                                     'H01'='P01: In the last three months, what was your household’s most important activity for getting food and income?',
+                                     'H01_1'='P03: In the last three months, what was your household’s second most important activity for getting food and income?',
+                                     'H01_2.1'='P05: What were your two main livelihood sources before joining FFA the activity? - Agriculture, including my own production or the sale of cereals, vegetables and other crops',
+                                     'H01_2.2'='P05: What were your two main livelihood sources before joining FFA the activity? - Livestock and the sale of livestock or livestock products and poultry',
+                                     'H01_2.3'='P05: What were your two main livelihood sources before joining FFA the activity? - Sale of alcoholic beverages/brewing',
+                                     'H01_2.4'='P05: What were your two main livelihood sources before joining FFA the activity? - Unskilled casual labor, like for agriculture, basic construction, etc',
+                                     'H01_2.5'='P05: What were your two main livelihood sources before joining FFA the activity? - Skilled labor',
+                                     'H01_2.6'='P05: What were your two main livelihood sources before joining FFA the activity? - Trader/shop owner/small trading/sale of crafts, etc.',
+                                     'H01_2.7'='P05: What were your two main livelihood sources before joining FFA the activity? - Salaried work (public/private)',
+                                     'H01_2.8'='P05: What were your two main livelihood sources before joining FFA the activity? - Sale of firewood/poles, charcoal, grass, stones, and other natural resources',
+                                     'H01_2.9'='P05: What were your two main livelihood sources before joining FFA the activity? - Borrowing food, cash, or other resources',
+                                     'H01_2.10'='P05: What were your two main livelihood sources before joining FFA the activity? - Fishing or sale of fish',
+                                     'H01_2.11'='P05: What were your two main livelihood sources before joining FFA the activity? - Support from family, friends, the community, etc',
+                                     'H01_2.12'='P05: What were your two main livelihood sources before joining FFA the activity? - Begging',
+                                     'H01_2.13'='P05: What were your two main livelihood sources before joining FFA the activity? - Food assistance/Sale of food assistance',
+                                     'H01_2.14'='P05: What were your two main livelihood sources before joining FFA the activity? - Gathering of wild foods',
+                                     'H01_2.15'='P05: What were your two main livelihood sources before joining FFA the activity? - Hunting',
+                                     'H01_2.17'='P05: What were your two main livelihood sources before joining FFA the activity? - No second source of income',
+                                     'H01_2.88'='P05: What were your two main livelihood sources before joining FFA the activity? - Other',
+                                     'H02'='P06: Has your household’s income changed over the past year?',
+                                     'H02_1'='P07: What is the main reason that your income decreased?',
+                                     'H03'='P09: Does your household regularly receive any money or non-food items from family members working in another part of the country or outside of the country?',
+                                     'H04.1'='P25: Does or did your house own any of the following assets during the last 3 months? - Bed (wood, metal)',
+                                     'H04.2'='P25: Does or did your house own any of the following assets during the last 3 months? - Mattress',
+                                     'H04.3'='P25: Does or did your house own any of the following assets during the last 3 months? - Chairs (plastic, wooden, etc.)',
+                                     'H04.4'='P25: Does or did your house own any of the following assets during the last 3 months? - Tables (plastic, wooden, etc.)',
+                                     'H04.5'='P25: Does or did your house own any of the following assets during the last 3 months? - Radio',
+                                     'H04.6'='P25: Does or did your house own any of the following assets during the last 3 months? - Television/Satellite dish/DVD player',
+                                     'H04.7'='P25: Does or did your house own any of the following assets during the last 3 months? - Cell/Mobile phone',
+                                     'H04.8'='P25: Does or did your house own any of the following assets during the last 3 months? - Wheel barrow',
+                                     'H04.9'='P25: Does or did your house own any of the following assets during the last 3 months? - Mosquito net',
+                                     'H04.10'='P25: Does or did your house own any of the following assets during the last 3 months? - Motorbike',
+                                     'H04.11'='P25: Does or did your house own any of the following assets during the last 3 months? - Bicycle',
+                                     'H04.12'='P25: Does or did your house own any of the following assets during the last 3 months? - Flat Iron for ironing clothes',
+                                     'H04.13'='P25: Does or did your house own any of the following assets during the last 3 months? - Stove/Kanun (traditional)',
+                                     'H04.14'='P25: Does or did your house own any of the following assets during the last 3 months? - Solar Panel (any size)',
+                                     'H04.15'='P25: Does or did your house own any of the following assets during the last 3 months? - Fishing equipment (any part)',
+                                     'H04.16'='P25: Does or did your house own any of the following assets during the last 3 months? - Seeds for planting',
+                                     'H04.17'='P25: Does or did your house own any of the following assets during the last 3 months? - Grain grinding tool',
+                                     'H04.18'='P25: Does or did your house own any of the following assets during the last 3 months? - Agriculture tools (Maloda/spade/axe)',
+                                     'H04.19'='P25: Does or did your house own any of the following assets during the last 3 months? - Other tools (for building, carpentry, fixing bicycles/motorbikes, etc.)',
+                                     'H04.20'='P25: Does or did your house own any of the following assets during the last 3 months? - Vehicles',
+                                     'H04.0'='P25: Does or did your house own any of the following assets during the last 3 months? - None',
+                                     'g_garden'='P28: Do you have a vegetable garden?',
+                                     'g_why_no_plant'='P31: Hy are you not growing any vegetables in your garden?',
+                                     'g_veg_area'='PXX: Where do you cultivate your vegetables?',
+                                     'farm_animal'='P35: Does your household own any livestock or farm animals (even if they are not near the home now?)',
+                                     'cattle_own'='P35.01: How many Cattle do you own?',
+                                     'cattle_more'='P35.02: How many of these of these Cattle were acquired after joining FFA?',
+                                     'goat_own'='P35.03: How many Goats/sheep do you own?',
+                                     'goat_more'='P35.04: How many of these Goats/sheep were acquired after joining FFA?',
+                                     'chicken_own'='P35.05: How many Chickens/ducks do you own?',
+                                     'chicken_more'='P35.06: How many of these Chickens/ducks were acquired after joining FFA?',
+                                     'livestock_mainuse'='P36: In the last 2 months, what was the main use of the livestock you own?',
+                                     'livestock_conflict'='P38: Have you been involved in any misunderstanding and/or conflict as a result of the livestock assets you own?',
+                                     'livestock_futureplan'='P39: Do you have any plans for investment in livestock assets in the future?',
+                                     'assets_threats'='AT1: Do any of the following situations pose any threat to the assets you own?',
+                                     'assets_threats_investment'='AT3: Do you feel restrained in investing in some assets that may contribute to your livelihoods?',
+                                     'harvest_storage'='Q18: Do you usually use storage facilities to keep your harvest?',
+                                     'storage_type_harvest'='Q19: What types of storage do you use? ',
+                                     'harvest_storageffa'='Q21: Did you adopt the use of storage facilities before or after joining FFA activities?',
+                                     'prevent_loss'='Q22: Do you practice any post-harvest production loss prevention techniques?',
+                                     'postharvest_training'='Q25: Have you received training in post-harvest handling techniques and technology provided by WFP?',
+                                     'postharvest_training_no'='Q26: Why didn’t you participate in the training?',
+                                     'training_implement'='Q28: Have you used these skills/ tools learned from the training in your daily life?',
+                                     'change_post_training'='Q30: How do you compare the post-harvest losses before and  after the post-harvest handling training?',
+                                     'loss_increase'='Q31: What was the main reason for increased losses despite having received trainings?',
+                                     'fcs'='Food Consumption Score (FCS) - Score',
+                                     'fcsg'='Food Consumption Score (FCS) - Classification',
+                                     'fcsVitag'='Food Consumption Score - Vitamin A Group',
+                                     'fcsProtein'='Food Consumption Score - Protein Group',
+                                     'fcshemeiron'='Food Consumption Score - Hem Iron Group',
+                                     'dds'='Dietary Diversity Score',
+                                     'ddsg'='Dietary Diversity Score Group',
+                                     'mddw'='Minimum Dietary Diversity Score - Women',
+                                     'cari'='Food Security (CARI)',
+                                     'lcsi'='Livelihoods-Based Coping Strategy Index (LCSI)',
+                                     'rcsi'='Consumption-Based Coping Strategy Index (rCSI) - Score',
+                                     'rcsig'='Consumption-Based Coping Strategy Index (rCSI) - Classification',
+                                     't_cs7a'='V02.1: In the last 7 days, how many days have you relied on less preferred and less expensive food',
+                                     't_cs7b'='V02.2: In the last 7 days, how many days have you borrowed food, or rely on help from friends or relatives',
+                                     't_cs7c'='V02.3: In the last 7 days, how many days did you have to Limit portion size at meals',
+                                     't_cs7d'='V02.4: In the last 7 days, how many days did you have to Restrict consumption by adults in order for small children to eat',
+                                     't_cs7e'='V02.5: In the last 7 days, how many days did you have to reduce number of meals eaten in a day',
+                                     't_cs7wf'='V02.6: In the last 7 days, how many days did you have to Eat non-traditional wild foods/leaves to survive',
+                                     't_cs7wg'='V02.7: In the last 7 days, how many days did you have to Restrict the consumption of elderly household members',
+                                     't_cs7wh'='V02.8: In the last 7 days, how many days did you have to Restrict the consumption of adult women in the household',
+                                     'N08'='V03.1: In the last 30 days, did your household send household members to eat with another household because of a lack of food or money to buy food?',
+                                     'N09'='V03.2: In the last 30 days, did your household sell more animals than usual for this time of year because of a lack of food or money to buy food?',
+                                     'N10'='V03.3: In the last 30 days, did your household borrow money or purchase food on credit because of a lack of food or money to buy food more than usual during this time of year?',
+                                     'N11'='V03.4: In the last 30 days, did your household gather wild foods more than normal for this time of year because of a lack of food or money to buy food?',
+                                     'N12'='V03.5: In the last 30 days, did your household ask other community members for a support of food because of a lack of food or money to buy food?',
+                                     'N13'='V03.6: In the last 30 days, did your household send more household members than normal to cattle and/or fishing camps because of a lack of food or money to buy food?',
+                                     'N14'='V03.7: In the last 30 days, did your household sell or eat seeds intended for planting this season because of a lack of food or money to buy food?',
+                                     'N15'='V03.8: In the last 30 days, did your household sell or slaughter the last of your cows and goats because of a lack of food or money to buy food?',
+                                     'N16'='V03.9: In the last 30 days, did your household travel to another village to look for/ search for (begging) for food or other resources because of a lack of food or money to buy food?',
+                                     'N17'='V03.10: In the last 30 days, did your household use community leaders or a local court to collect debts or bride wealth/dowry, or to gain a support of food or other resources from another community member because of a lack of food or money to buy food?',
+                                     's_shock.1'='W01: What were the household’s main shocks during the past 3 months? - Insecurity/violence',
+                                     's_shock.2'='W01: What were the household’s main shocks during the past 3 months? - Lack of free movement',
+                                     's_shock.3'='W01: What were the household’s main shocks during the past 3 months? - High food prices',
+                                     's_shock.4'='W01: What were the household’s main shocks during the past 3 months? - Debts to reimburse',
+                                     's_shock.5'='W01: What were the household’s main shocks during the past 3 months? - High fuel/transportation costs',
+                                     's_shock.6'='W01: What were the household’s main shocks during the past 3 months? - Floods, heavy rains, landslides',
+                                     's_shock.7'='W01: What were the household’s main shocks during the past 3 months? - Dry spell/delay of rains',
+                                     's_shock.8'='W01: What were the household’s main shocks during the past 3 months? - Weeds/pest',
+                                     's_shock.9'='W01: What were the household’s main shocks during the past 3 months? - Livestock diseases',
+                                     's_shock.10'='W01: What were the household’s main shocks during the past 3 months? - Loss of employment/reduced salary',
+                                     's_shock.11'='W01: What were the household’s main shocks during the past 3 months? - Human sickness/death',
+                                     's_shock.12'='W01: What were the household’s main shocks during the past 3 months? - Returnees/IDPs living with household',
+                                     's_shock.13'='W01: What were the household’s main shocks during the past 3 months? - Social event',
+                                     's_shock.14'='W01: What were the household’s main shocks during the past 3 months? - Delayed assistance distributions',
+                                     's_shock.15'='W01: What were the household’s main shocks during the past 3 months? - Lack of agro-inputs/tools',
+                                     's_shock.16'='W01: What were the household’s main shocks during the past 3 months? - Food shortages/reduced distributions',
+                                     's_shock.17'='W01: What were the household’s main shocks during the past 3 months? - COVID-19 and related restrictions',
+                                     's_shock.88'='W01: What were the household’s main shocks during the past 3 months? - Other',
+                                     's_shock.0'='W01: What were the household’s main shocks during the past 3 months? - No Shock',
+                                     'total_fooditems' = 'Total Monthly Food Expenditure (SSP)',
+                                     'total_nonfooditems' = 'Total Monthly Non-Food Expenditure (SSP)',
+                                     'mkt_access' = 'U12: Are you or any of the household member currently able to access the nearest market for your households food and utility needs?',
+                                     'mkt_distance' = 'U13: If yes, how long does it take  (one way) in minutes to reach the nearest market?',
+                                     'mkt_availability' = 'U15: How would you rate the current availability of key staple commodities (cereals, legumes) at this nearest market compared to same period last year?',
+                                     'mkt_currentprice' = 'U16: How would you judge the current prices of key staple commodities at the nearest market compared to same period last year?',
+                                     'mkt_missingstaple' = 'U17: Are there any staple commodities that are not found in the market that you normally buy?',
+                                     'mkt_assitprice' = 'U18: Based on your experience, has the cash or food assistance received helped you in anyway to reduce the effect/impact of the commodity prices increased and availability on your household?',
+                                     'mkt_capacity' = 'U19: As we speak today, what is your current household capacity to access food needs (purchase, aid or own production) in the next coming 30 days?',
+                                     'mkt_distributionprice' = 'U20: How have prices of the staple foods (cereals, legumes, oil) in the nearby market changed following distribution of cash or food assistance in your community?',
+                                     'mkt_distributiontrader' = 'U21: At the time of distribution of cash or  food assistance in your community, do the number of traders in the local market change?',
+                                     'sers_1'='SERS 1 - Your household can bounce back from any challenge (including i.e. floods, COVID-19, conflicts) that life throws at it',
+                                     'sers_2'='SERS 2 - During times of hardship (like i.e. floods, COVID-19, conflicts), your household can change its primary income or source of livelihood if needed',
+                                     'sers_3'='SERS 3 - If threats (like i.e. floods, COVID-19, conflicts) to your household became more frequent and intense, you would still find a way to get by',
+                                     'sers_4'='SERS 4 - During times of hardship(like i.e. floods, COVID-19, conflicts), your household can access the financial support you need',
+                                     'sers_5'='SERS 5 - Your household can rely on the support of family and friends when you need help',
+                                     'sers_6'='SERS 6 - Your household can rely on the support of politicians and government when you need help ',
+                                     'sers_7'='SERS 7 - Your household has learned important lessons from past hardships (including i.e. floods, COVID-19, conflicts) that will help you better prepare for future threats',
+                                     'sers_8'='SERS 8 - Your household is fully prepared for any future natural disasters (i.e. floods, COVID-19, hunger, etc..) that may occur in your area',
+                                     'sers_9'='SERS 9 - Your household receives useful information warning you about future risks (i.e. heavy rains, COVID-19, conflicts) in advance',
+                                     'collect_fruits'='Y42: In the last 3 months, have the women collected firewood or wild fruit (lalop) safely? ',
+                                     'firewood_fruits'='Y43: Has she travelled alone to collect fire woods and or wild fruits?',
+                                     'insecurity_women'='Y44: Have any women in your household experienced insecurity while collected firewood?',
+                                     'insecurity_frequency'='Y45: How often do you experience insecurity?',
+                                     'type_insecurity'='Y46: What type of insecurity did she experience?',
+                                     'road_use'='Y48: In the last month, has any person in your household used any of the roads in your community and or to travel outside?',
+                                     'travel_large'='Y49: Were they able to travel alone with a large bag and / or valuables?',
+                                     'travel_large_safety'='Y50: Did you travel in a large group for safety purpose?',
+                                     'travel_day_night'='Y51: Was the travel during the day or night?',
+                                     'household_feltfree'='Y54: In the last three months, has everyone in your household felt free to move without a gun?',
+                                     'hh_notfeltfree'='Y55: When have you or your HH members not felt free to move without gun? ',
+                                     'graze_cattle'='Y59: Have your communities’ cattle grazed in pastures towards the Greater Pibor Administrative Area (Nanaam, etc.)? ',
+                                     'youths_spend'='Y63: In the last 3 months, what are youths from your community spending most of their time on?',
+                                     'children_home'='Y64: In the last 3 months, have children from your household been left home and move alone and how frequently?',
+                                     'children_travel'='Y65: In the last 3 months, have children from your households been allowed to travel outside the homestead without adult accompaniment (to visit relatives, go to school) and how frequent?',
+                                     'social_event'='Y66: In the last three months, has anyone in your household attended a large social event (eg. marriage, the drum / youth dance)?',
+                                     'person_travel'='Y67: In the last 3 months has anyone in your village travelled away and stayed in a community that has previously been in conflict with your community?',
+                                     'heard_marriage' = 'Y70: In the last six months, have you heard of any new marriages between members of previously conflict communities? ',
+                                     'village_incidents' = 'Y71: In the last 3 month, in your village, has there been any incident inside your community? ',
+                                     'age_viollence' = 'Y72: Was that incident of age-set violence inside your community?',
+                                     'how_often' = 'Y74: How frequently it happened?',
+                                     'child_sleptout' = 'Y76: If children slept outside at night, left the children alone to sleep at night?',
+                                     'hh_tradingactivities' = 'Y78: In the last three months, have you or someone in your household engaged in trading activities or exchanging goods with other communities?',
+                                     'trading_where' = 'Y79: Where did the trading happen? ',
+                                     'trading_frequency' = 'Y82: How often have your or someone in your household engaged in trading activities?',
+                                     'trading_whichcommunity' = 'Y83: Was this cattle trading between members of your community and members of the Murle community? ',
+                                     'boys_lookcattle' = 'Y87: In the last three months, have younger boys from your household helped look after the cattle?',
+                                     'hh_accessedfarm' = 'Y89: In the last three months, has your household accessed their farm far from the village? ',
+                                     'courts_working' = 'Y91: In the last three months, have the chiefs’ courts been working?')
+
+
+```
+
+```{r analysis_functions}
+## creates aggregate function
+activity_function <- function (y) {
+  y %>%
+  tbl_summary(include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  as_gt()
+
+}
+
+
+## creates state function
+activity_state_function <- function (y) {
+  y %>%
+  tbl_summary(by = "a_state",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1":"stat_9") ~ "**State**") %>%
+  as_gt()
+
+}
+
+
+
+## creates activity modality function
+activity_modality_function <- function (y) {
+  y %>%
+  tbl_summary(by = "assist_modality",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Activity Modality**") %>%
+  as_gt()
+
+}
+
+
+## creates activity main participant function
+activity_mainpart_function <- function (y) {
+  y %>% 
+  tbl_summary(by = "ffa_mainpart",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2", "stat_3") ~ "**Activity Main Participant**") %>%
+  as_gt()
+
+}
+
+
+
+## creates head of household sex function
+activity_hh_head_sex_function <- function (y) {
+  y %>%
+  tbl_summary(by = "hh_head_sex",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Head of Household Sex**") %>%
+  as_gt()
+
+}
+
+## creates hh chronic illness function
+activity_hh_chronic_function <- function (y) {
+  y %>%
+  tbl_summary(by = "c_hh_ill",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Chronic Illness Status**") %>%
+  as_gt()
+
+}
+
+## creates hh disability function
+activity_hh_disability_function <- function (y) {
+  y %>%
+  tbl_summary(by = "hh_disability",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Disability Status**") %>%
+  as_gt()
+
+}
+
+## creates activity participation years function
+activity_mainpart_year_function <- function (y) {
+  y %>%
+  tbl_summary(by = "ffa_mainpart_year",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+          add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2", "stat_3", "stat_4") ~ "**Activity Participation Years**") %>%
+  as_gt()
+
+}
+
+
+## creates activity ration size function
+activity_ration_size_function <- function (y) {
+  y %>%  
+  tbl_summary(by = "assist_rationsize",
+              include = !c("a_state", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "assist_modality","c_hh_ill","hh_disability"),
+              type = list(where(is.logical) ~ "categorical", where(is.numeric) ~ "continuous"),
+              statistic = list(all_continuous() ~ "{mean}",
+                               all_categorical() ~ "{N_nonmiss}({p}%)"),
+              missing = "no") %>%
+         add_p(test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+        pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  add_overall()%>%
+  modify_header(update = list(label ~ "**Variable**", p.value ~ "**P**"))%>%
+  bold_labels()%>%
+  italicize_labels()%>%
+  italicize_levels() %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Activity Assistance Ration Size**") %>%
+  as_gt()
+
+}
+
+
+## list creation
+section_abc <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "c_hh_ill","hh_disability", "a_suboffice_class", "a_cpi", "a_context", "assist_received", "assist_received_why", "assist_modality", "assist_voucher_type", "assist_milling_type", "assist_rationsize","head_age", "head_marital","c_hh_orphaned","c_hh_minors", "ffa_mainpart":"hh_size", "c_s_ag1m":"c_s_ag5m","c_card":"c_matchcard_no","c_hh_ill":"c_provider_ill","c_hh_disable":"c_provider_disable", "c_hh_ill","hh_disability") %>% colnames() 
+
+section_d <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "c_hh_ill","hh_disability", "d_bsfpplw":"d_card_lost", "d_bsfp_missed":"d_bsfp_reason","d_tsfpplw":"d_tsfpu5") %>% colnames()
+
+section_e <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize","c_hh_ill","hh_disability", "e_training.1":"e_training.88", "e_pillar.1":"e_pillar.4","e_activity_p1.101","e_activity_p1.102","e_activity_p1.103","e_activity_p1.104","e_activity_p1.105","e_activity_p1.106","e_activity_p2.201","e_activity_p2.202","e_activity_p2.203","e_activity_p2.204","e_activity_p2.205","e_activity_p2.206","e_activity_p2.207","e_activity_p2.208","e_activity_p2.209","e_activity_p2.210","e_activity_p3.301","e_activity_p3.302","e_activity_p3.303","e_activity_p3.304","e_activity_p3.305","e_ffa_abi_1":"e_ffa_ebi_3","e_ffa_abi_percent","e_ffa_abi_shock_hh","e_ffa_abi_shock_com","e_training_yn","e_training.1":"e_training.88","e_training_improve","e_assets_change","relationship_other":"better_rel") %>% colnames()
+
+section_fg <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize", "c_hh_ill","hh_disability", "d_criteria","d_criteria_selection.101":"d_criteria_selection.88","d_bens_selection.1":"d_bens_selection.88","d_asst_sel","d_ben_mis","d_hh_pay":"d_fam_har", "grad_comm","grad_who_comm":"consulted_involved", 'e_mod_pref') %>% colnames()
+
+section_h <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize","c_hh_ill","hh_disability", "f_entitled_all":"f_comm","f_sameday", "f_waitminutes","f_return_time","f_site_access","assist_end","comType.1":"comType.7","cashv_value","cashv_food","cashv_debts":"cashv_redeem") %>% colnames()
+
+section_jk <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize","c_hh_ill","hh_disability","pay_entitlement","pay_purpose","safetly_lev","safety_communt","j_security","j_tax","k_info":"k_cfm_aware","k_cfmpref.1":"k_cfmpref.88","k_complaint","k_nocomplaint.1":"k_nocomplaint.88","k_response":"k_topics","k_treatment","k_sites_degnity","k_measures_taken","k_sites_degnity_issues.1":"k_sites_degnity_issues.88") %>% colnames()
+
+section_lm <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize","c_hh_ill","hh_disability","l_pmc","l_pmc_not","l_pmc_rpt":"l_pmc_rep_group","pmc_satisfied","pmc_role_future","m_use_food","m_use_cash","m_use_cash","m_top_gender", "dmp_2":"dmp_5") %>% colnames()
+
+section_no <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year", "assist_rationsize","c_hh_ill","hh_disability","o_acc_med":"o_cnv_where", "o_asst_adq":"o_nt_why","o_cnv_presence", "o_msg_nh", "h_message",'h_water','h_watermin','h_latrine','h_latrinemin','h_latrineaccess1','h_latrineaccess2','h_soap' ) %>% colnames()
+
+section_pq <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year","assist_rationsize","c_hh_ill","hh_disability",'c_house','c_house_own','H01','H01_1','H01_2.1':"H01_2.17",'H02','H02_1','H03','H04.1':'H04.0','g_garden','g_why_no_plant','g_veg_area','farm_animal','cattle_own','cattle_more','goat_own','goat_more','chicken_own','chicken_more','livestock_mainuse','livestock_conflict','livestock_futureplan','assets_threats','assets_threats_investment','harvest_storage','storage_type_harvest','harvest_storageffa','prevent_loss','postharvest_training','postharvest_training_no','training_implement','change_post_training','loss_increase') %>% colnames()
+
+section_rst <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year","assist_rationsize","c_hh_ill","hh_disability","Cereal", "Pulses", "Dairy", "Meat", "Veges", "Fruits", "VegOil", "Sugar","fcs","fcsg","fcsVitag", "fcsProtein", "fcshemeiron", "dds","ddsg", "mddw","cari") %>% colnames()
+
+section_u <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year","assist_rationsize","c_hh_ill","hh_disability","total_fooditems","total_nonfooditems",'mkt_access',
+'mkt_distance','mkt_availability':'mkt_distributiontrader') %>% colnames()
+
+section_vw <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year","assist_rationsize","c_hh_ill","hh_disability","lcsi","rcsi","rcsig","t_cs7a":"t_cs7wh", "rcsi_yn_t_cs7a":"rcsi_yn_t_cs7wh","N08":"N17",'s_shock.1':'s_shock.0') %>% colnames()
+
+section_x <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year","assist_rationsize","c_hh_ill","hh_disability","sers_1":"sers_9") %>% colnames()
+
+section_pb <- selected_ffa_data %>% select("a_state", "assist_modality", "ffa_mainpart", "hh_head_sex", "ffa_mainpart_year","assist_rationsize","c_hh_ill","hh_disability","collect_fruits","firewood_fruits","insecurity_women","insecurity_frequency","type_insecurity", "road_use","travel_large","travel_large_safety","travel_day_night","household_feltfree","hh_notfeltfree","graze_cattle","youths_spend","children_home","children_travel","social_event","person_travel","stay_where","whynot_travel","heard_marriage","village_incidents","age_viollence","how_often","child_sleptout","hh_tradingactivities","trading_where","trading_frequency","trading_whichcommunity","boys_lookcattle","hh_accessedfarm","courts_working") %>% colnames()
+
+
+```
+
+# Study Metadata
+
+```{r metadata, cache = TRUE, autodep = TRUE}
+
+##########################
+## Creates maps for data collection locations
+##########################
+
+myMap <- get_stamenmap(bbox = c(left = 23.80204, bottom = 2.5, right =
+  36.92313, top = 13.5), zoom = 6, maptype = c("toner-lite"),
+  crop = TRUE, messaging = FALSE, urlonly = FALSE,
+  color = c("color", "bw"), force = FALSE, where = tempdir())
+
+
+ggmap(myMap) + geom_point(aes(x = as.numeric(accepted.aag1._v_coord_longitude), y = as.numeric(accepted.aag1._v_coord_latitude)), data = selected_ffa_data,
+ alpha = .5, color = "dark red", size = 2.0) + ggtitle("Map of Data Collection Locations")
+
+
+##########################
+## Creates summary table data collection locations by state
+##########################
+
+## provides a summary of the data collection by state
+selected_ffa_data %>% group_by(a_state) %>%
+  summarise(n = n()) %>% gt() %>% tab_options(table.width = pct(75), column_labels.background.color = "#007DBC", row_group.background.color = "#D9D9D9") %>% tab_header(title="Number of Observations by State")
+
+
+##########################
+## Creates summary table data collection by date
+##########################
+
+# provides a summary of the data collection by state
+selected_ffa_data %>% mutate(collection_date = sub("T.*", "", start)) %>%  group_by(collection_date) %>%
+  summarise(n = n()) %>% gt() %>% tab_options(table.width = pct(75), column_labels.background.color = "#007DBC", row_group.background.color = "#D9D9D9") %>% tab_header(title="Number of Observations by Data Collection Date")
+
+##########################
+## Creates summary table data collection locations by key disaggregations
+##########################
+
+## provides a summary of the data collection by years of participation
+selected_ffa_data %>% group_by(ffa_mainpart_year) %>%
+  summarise(n = n()) %>% gt() %>% tab_options(table.width = pct(75), column_labels.background.color = "#007DBC", row_group.background.color = "#D9D9D9") %>% tab_header(title= "Number of Observations by Years of Participation")
+
+## provides a summary of the data collection by CP
+selected_ffa_data %>% group_by(a_cpi) %>%
+  summarise(n = n()) %>% gt() %>% tab_options(table.width = pct(75), column_labels.background.color = "#007DBC", row_group.background.color = "#D9D9D9") %>% tab_header(title="Number of Observations by CP")
+
+## provides a summary of the data collection by modality
+selected_ffa_data %>% group_by(assist_modality) %>%
+  summarise(n = n()) %>% gt() %>% tab_options(table.width = pct(75), column_labels.background.color = "#007DBC", row_group.background.color = "#D9D9D9") %>% tab_header(title="Number of Observations by Assistance Modality")
+
+## provides a summary of the data collection by ration size
+selected_ffa_data %>% group_by(assist_rationsize) %>%
+  summarise(n = n()) %>% gt() %>% tab_options(table.width = pct(75), column_labels.background.color = "#007DBC", row_group.background.color = "#D9D9D9") %>% tab_header(title="Number of Observations by Assistance Ration Size")
+
+
+```
+# Section A, B, and C - Demographics {.tabset .tabset-pills}
+
+This section covers General Information (Section A and B) and Household Demographics (Section C) 
+
+## Aggregated
+
+```{r tab1_1, cache = TRUE, autodep = TRUE}
+tab1_1 <- activity_function(selected_ffa_data %>% select(section_abc))
+  
+tab1_1
+
+```
+
+
+## Disaggregated by Modality
+
+```{r tab1_2, cache = TRUE, autodep = TRUE}
+tab1_2 <- activity_modality_function(selected_ffa_data %>% select(section_abc))
+  
+tab1_2
+
+```
+
+## Disaggregated by Ration Size
+
+```{r tab1_3, cache = TRUE, autodep = TRUE}
+tab1_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_abc))
+  
+
+tab1_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab1_4, cache = TRUE, autodep = TRUE}
+tab1_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_abc))
+  
+tab1_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab1_5, cache = TRUE, autodep = TRUE}
+tab1_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_abc))
+  
+tab1_5
+
+```
+
+## Disaggregated by Location
+
+```{r tab1_6, cache = TRUE, autodep = TRUE}
+tab1_6 <- activity_state_function(selected_ffa_data %>% select(section_abc))
+  
+tab1_6
+
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab1_7, cache = TRUE, autodep = TRUE}
+tab1_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_abc))
+  
+tab1_7
+
+```
+
+## Disaggregated by Disability
+
+```{r tab1_8, cache = TRUE, autodep = TRUE}
+tab1_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_abc))
+  
+tab1_8
+
+```
+
+# Section D - Programme Adherence {.tabset .tabset-pills}
+
+This section covers Programme Adherence (Section D)
+
+## Aggregated
+
+```{r tab2_1, cache = TRUE, autodep = TRUE}
+tab2_1 <- activity_function(selected_ffa_data %>% select(section_d))
+tab2_1
+```
+
+
+## Disaggregated by Modality
+
+```{r tab2_2, cache = TRUE, autodep = TRUE}
+tab2_2 <- activity_modality_function(selected_ffa_data %>% select(section_d))
+tab2_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab2_3, cache = TRUE, autodep = TRUE}
+tab2_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_d))
+tab2_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab2_4, cache = TRUE, autodep = TRUE}
+tab2_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_d))
+tab2_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab2_5, cache = TRUE, autodep = TRUE}
+tab2_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_d))
+tab2_5
+```
+
+## Disaggregated by Location
+
+```{r tab2_6, cache = TRUE, autodep = TRUE}
+tab2_6 <- activity_state_function(selected_ffa_data %>% select(section_d))
+tab2_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab2_7, cache = TRUE, autodep = TRUE}
+tab2_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_d))
+tab2_7
+```
+
+## Disaggregated by Disability
+
+```{r tab2_8, cache = TRUE, autodep = TRUE}
+tab2_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_d))
+tab2_8
+```
+
+# Section E - Programme Participation {.tabset .tabset-pills}
+
+This section covers FFA Participation (Section E)
+
+## Aggregated
+
+```{r tab3_1, cache = TRUE, autodep = TRUE}
+tab3_1 <- activity_function(selected_ffa_data %>% select(section_e))
+tab3_1
+```
+
+## Disaggregated by Modality
+
+```{r tab3_2, cache = TRUE, autodep = TRUE}
+tab3_2 <- activity_modality_function(selected_ffa_data %>% select(section_e))
+tab3_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab3_3, cache = TRUE, autodep = TRUE}
+tab3_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_e))
+tab3_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab3_4, cache = TRUE, autodep = TRUE}
+tab3_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_e))
+tab3_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab3_5, cache = TRUE, autodep = TRUE}
+tab3_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_e))
+tab3_5
+```
+
+## Disaggregated by Location
+
+```{r tab3_6, cache = TRUE, autodep = TRUE}
+tab3_6 <- activity_state_function(selected_ffa_data %>% select(section_e))
+tab3_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab3_7, cache = TRUE, autodep = TRUE}
+tab3_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_e))
+tab3_7
+```
+
+## Disaggregated by Disability
+
+```{r tab3_8, cache = TRUE, autodep = TRUE}
+tab3_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_e))
+tab3_8
+```
+
+# Section F and G - Beneficiary and Modality Selection {.tabset .tabset-pills}
+
+This section covers Beneficiary Selection (Section F) and Transfer Modality Selection (Section G) 
+
+## Aggregated
+
+```{r tab4_1, cache = TRUE, autodep = TRUE}
+tab4_1 <- activity_function(selected_ffa_data %>% select(section_fg))
+tab4_1
+```
+
+## Disaggregated by Modality
+
+```{r tab4_2, cache = TRUE, autodep = TRUE}
+tab4_2 <- activity_modality_function(selected_ffa_data %>% select(section_fg))
+tab4_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab4_3, cache = TRUE, autodep = TRUE}
+tab4_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_fg))
+tab4_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab4_4, cache = TRUE, autodep = TRUE}
+tab4_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_fg))
+tab4_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab4_5, cache = TRUE, autodep = TRUE}
+tab4_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_fg))
+tab4_5
+```
+
+## Disaggregated by Location
+
+```{r tab4_6, cache = TRUE, autodep = TRUE}
+tab4_6 <- activity_state_function(selected_ffa_data %>% select(section_fg))
+tab4_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab4_7, cache = TRUE, autodep = TRUE}
+tab4_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_fg))
+tab4_7
+```
+
+## Disaggregated by Disability
+
+```{r tab4_8, cache = TRUE, autodep = TRUE}
+tab4_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_fg)) 
+tab4_8
+```
+
+# Section H - Assistance Access and Utilization {.tabset .tabset-pills}
+
+This section covers Access and Utilization of Assistance (Section H)
+
+## Aggregated
+
+```{r tab5_1, cache = TRUE, autodep = TRUE}
+tab5_1 <- activity_function(selected_ffa_data %>% select(section_h))
+tab5_1
+```
+
+## Disaggregated by Modality
+
+```{r tab5_2, cache = TRUE, autodep = TRUE}
+tab5_2 <- activity_modality_function(selected_ffa_data %>% select(section_h))
+tab5_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab5_3, cache = TRUE, autodep = TRUE}
+tab5_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_h))
+tab5_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab5_4, cache = TRUE, autodep = TRUE}
+tab5_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_h))
+tab5_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab5_5, cache = TRUE, autodep = TRUE}
+tab5_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_h))
+tab5_5
+
+```
+
+## Disaggregated by Location
+
+```{r tab5_6, cache = TRUE, autodep = TRUE}
+tab5_6 <- activity_state_function(selected_ffa_data %>% select(section_h))
+tab5_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab5_7, cache = TRUE, autodep = TRUE}
+tab5_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_h))
+tab5_7
+```
+
+## Disaggregated by Disability
+
+```{r tab5_8, cache = TRUE, autodep = TRUE}
+tab5_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_h))
+tab5_8
+```
+
+
+# Section J and K - Protection and AAP {.tabset .tabset-pills}
+
+This section covers Protection (Section J) and AAP (Section K)
+
+## Aggregated
+
+```{r tab6_1, cache = TRUE, autodep = TRUE}
+tab6_1 <- activity_function(selected_ffa_data %>% select(section_jk))
+tab6_1
+```
+
+## Disaggregated by Modality
+
+```{r tab6_2, cache = TRUE, autodep = TRUE}
+tab6_2 <- activity_modality_function(selected_ffa_data %>% select(section_jk))
+tab6_2
+
+```
+
+## Disaggregated by Ration Size
+
+```{r tab6_3, cache = TRUE, autodep = TRUE}
+tab6_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_jk))
+tab6_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab6_4, cache = TRUE, autodep = TRUE}
+tab6_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_jk))
+tab6_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab6_5, cache = TRUE, autodep = TRUE}
+tab6_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_jk))
+tab6_5
+```
+
+## Disaggregated by Location
+
+```{r tab6_6, cache = TRUE, autodep = TRUE}
+tab6_6 <- activity_state_function(selected_ffa_data %>% select(section_jk))
+tab6_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab6_7, cache = TRUE, autodep = TRUE}
+tab6_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_jk))
+tab6_7
+```
+
+## Disaggregated by Disability
+
+```{r tab6_8, cache = TRUE, autodep = TRUE}
+tab6_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_jk))
+tab6_8
+```
+
+# Section L and M - PMCs and Gender {.tabset .tabset-pills}
+
+This section covers Project Management Committee (Section L) and Decisionmaking Gender  (Section K)
+
+## Aggregated
+
+```{r tab7_1, cache = TRUE, autodep = TRUE}
+tab7_1 <- activity_function(selected_ffa_data %>% select(section_lm))
+tab7_1
+```
+
+## Disaggregated by Modality
+
+```{r tab7_2, cache = TRUE, autodep = TRUE}
+tab7_2 <- activity_modality_function(selected_ffa_data %>% select(section_lm))
+tab7_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab7_3, cache = TRUE, autodep = TRUE}
+tab7_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_lm))
+tab7_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab7_4, cache = TRUE, autodep = TRUE}
+tab7_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_lm))
+tab7_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab7_5, cache = TRUE, autodep = TRUE}
+tab7_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_lm))
+tab7_5
+```
+
+## Disaggregated by Location
+
+```{r tab7_6, cache = TRUE, autodep = TRUE}
+tab7_6 <- activity_state_function(selected_ffa_data %>% select(section_lm))
+tab7_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab7_7, cache = TRUE, autodep = TRUE}
+tab7_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_lm))
+tab7_7
+```
+
+## Disaggregated by Disability
+
+```{r tab7_8, cache = TRUE, autodep = TRUE}
+tab7_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_lm))
+tab7_8
+```
+# Section N and O - Health and Nutrition Services {.tabset .tabset-pills}
+
+This section covers Health and Nutrition Services (Section N) and WASH (Section O)
+
+## Aggregated
+
+```{r tab8_1, cache = TRUE, autodep = TRUE}
+tab8_1 <- activity_function(selected_ffa_data %>% select(section_no))
+tab8_1
+```
+
+## Disaggregated by Modality
+
+```{r tab8_2, cache = TRUE, autodep = TRUE}
+tab8_2 <- activity_modality_function(selected_ffa_data %>% select(section_no))
+tab8_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab8_3, cache = TRUE, autodep = TRUE}
+tab8_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_no))
+tab8_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab8_4, cache = TRUE, autodep = TRUE}
+tab8_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_no))
+tab8_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab8_5, cache = TRUE, autodep = TRUE}
+tab8_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_no))
+tab8_5
+```
+
+## Disaggregated by Location
+
+```{r tab8_6, cache = TRUE, autodep = TRUE}
+tab8_6 <- activity_state_function(selected_ffa_data %>% select(section_no))
+tab8_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab8_7, cache = TRUE, autodep = TRUE}
+tab8_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_no))
+tab8_7
+```
+
+## Disaggregated by Disability
+
+```{r tab8_8, cache = TRUE, autodep = TRUE}
+tab8_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_no))
+tab8_8
+```
+
+# Section P and Q - Livelihoods and Agriculture {.tabset .tabset-pills}
+
+This section covers Livelihoods (Section P) and Agriculture (Section Q)
+
+## Aggregated
+
+```{r tab9_1, cache = TRUE, autodep = TRUE}
+tab9_1 <- activity_function(selected_ffa_data %>% select(section_pq))
+tab9_1
+
+```
+
+## Disaggregated by Modality
+
+```{r tab9_2, cache = TRUE, autodep = TRUE}
+tab9_2 <- activity_modality_function(selected_ffa_data %>% select(section_pq))
+tab9_2
+
+```
+
+## Disaggregated by Ration Size
+
+```{r tab9_3, cache = TRUE, autodep = TRUE}
+tab9_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_pq))
+tab9_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab9_4, cache = TRUE, autodep = TRUE}
+tab9_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_pq))
+tab9_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab9_5, cache = TRUE, autodep = TRUE}
+tab9_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_pq))
+tab9_5
+```
+
+## Disaggregated by Location
+
+```{r tab9_6, cache = TRUE, autodep = TRUE}
+tab9_6 <- activity_state_function(selected_ffa_data %>% select(section_pq))
+tab9_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab9_7, cache = TRUE, autodep = TRUE}
+tab9_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_pq))
+tab9_7
+```
+
+## Disaggregated by Disability
+
+```{r tab9_8, cache = TRUE, autodep = TRUE}
+tab9_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_pq))
+tab9_8
+```
+
+# Section R, S, and T - Food Consumption and Dietary Diversity {.tabset .tabset-pills}
+
+This section covers Food Consumption (Section R), Minimum Acceptable Diet (Section S), and Minimum Dietary Diversity (Section T)
+
+## Aggregated
+
+```{r tab13_1, cache = TRUE, autodep = TRUE}
+tab13_1 <- activity_function(selected_ffa_data %>% select(section_rst))
+tab13_1
+```
+
+## Disaggregated by Modality
+
+```{r tab13_2, cache = TRUE, autodep = TRUE}
+tab13_2 <- activity_modality_function(selected_ffa_data %>% select(section_rst))
+tab13_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab13_3, cache = TRUE, autodep = TRUE}
+tab13_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_rst))
+tab13_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab13_4, cache = TRUE, autodep = TRUE}
+tab13_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_rst))
+tab13_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab13_5, cache = TRUE, autodep = TRUE}
+tab13_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_rst))
+tab13_5
+```
+
+## Disaggregated by Location
+
+```{r tab13_6, cache = TRUE, autodep = TRUE}
+tab13_6 <- activity_state_function(selected_ffa_data %>% select(section_rst))
+tab13_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab13_7, cache = TRUE, autodep = TRUE}
+tab13_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_rst))
+tab13_7
+```
+
+## Disaggregated by Disability
+
+```{r tab13_8, cache = TRUE, autodep = TRUE}
+tab13_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_rst))
+tab13_8
+```
+
+# Section U - Expenditure and Markets {.tabset .tabset-pills}
+
+This section covers Household Expenditure and Market Access (Section U)
+
+## Aggregated
+
+```{r tab10_1, cache = TRUE, autodep = TRUE}
+tab10_1 <- activity_function(selected_ffa_data %>% select(section_u))
+tab10_1
+```
+
+## Disaggregated by Modality
+
+```{r tab10_2, cache = TRUE, autodep = TRUE}
+tab10_2 <- activity_modality_function(selected_ffa_data %>% select(section_u))
+tab10_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab10_3, cache = TRUE, autodep = TRUE}
+tab10_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_u))
+tab10_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab10_4, cache = TRUE, autodep = TRUE}
+tab10_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_u))
+tab10_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab10_5, cache = TRUE, autodep = TRUE}
+tab10_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_u))
+tab10_5
+```
+
+## Disaggregated by Location
+
+```{r tab10_6, cache = TRUE, autodep = TRUE}
+tab10_6 <- activity_state_function(selected_ffa_data %>% select(section_u))
+tab10_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab10_7, cache = TRUE, autodep = TRUE}
+tab10_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_u))
+tab10_7
+```
+
+## Disaggregated by Disability
+
+```{r tab10_8, cache = TRUE, autodep = TRUE}
+tab10_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_u))
+tab10_8
+```
+
+# Section V and W - Coping Strategies and Shocks {.tabset .tabset-pills}
+
+This section covers Livelihoods-Based and Consumption-Based Coping Strategies (Section V) and Shocks (Section W)
+
+## Aggregated
+
+```{r tab14_1, cache = TRUE, autodep = TRUE}
+tab14_1 <- activity_function(selected_ffa_data %>% select(section_vw))
+tab14_1
+```
+
+## Disaggregated by Modality
+
+```{r tab14_2, cache = TRUE, autodep = TRUE}
+tab14_2 <- activity_modality_function(selected_ffa_data %>% select(section_vw))
+tab14_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab14_3, cache = TRUE, autodep = TRUE}
+tab14_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_vw))
+tab14_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab14_4, cache = TRUE, autodep = TRUE}
+tab14_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_vw))
+tab14_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab14_5, cache = TRUE, autodep = TRUE}
+tab14_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_vw))
+tab14_5
+```
+
+## Disaggregated by Location
+
+```{r tab14_6, cache = TRUE, autodep = TRUE}
+tab14_6 <- activity_state_function(selected_ffa_data %>% select(section_vw))
+tab14_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab14_7, cache = TRUE, autodep = TRUE}
+tab14_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_vw))
+tab14_7
+```
+
+## Disaggregated by Disability
+
+```{r tab14_8, cache = TRUE, autodep = TRUE}
+tab14_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_vw))
+tab14_8
+```
+
+# Section X - SERS {.tabset .tabset-pills}
+
+This section covers Subjectively Evaluated Resilience Score (Section X)
+
+## Aggregated
+
+```{r tab11_1, cache = TRUE, autodep = TRUE}
+tab11_1 <- activity_function(selected_ffa_data %>% select(section_x))
+tab11_1
+```
+
+## Disaggregated by Modality
+
+```{r tab11_2, cache = TRUE, autodep = TRUE}
+tab11_2 <- activity_modality_function(selected_ffa_data %>% select(section_x))
+tab11_2
+```
+
+## Disaggregated by Ration Size
+
+```{r tab11_3, cache = TRUE, autodep = TRUE}
+tab11_3 <- activity_ration_size_function(selected_ffa_data %>% filter(assist_rationsize != "Don't remember/know") %>% mutate(assist_rationsize = droplevels(assist_rationsize)) %>% select(section_x))
+tab11_3
+```
+
+## Disaggregated by Participation Years
+
+```{r tab11_4, cache = TRUE, autodep = TRUE}
+tab11_4 <- activity_mainpart_year_function(selected_ffa_data %>% filter(ffa_mainpart_year != "don't know") %>% mutate(ffa_mainpart_year = droplevels(ffa_mainpart_year)) %>% select(section_x))
+tab11_4
+```
+
+## Disaggregated by Head of Household Sex
+
+```{r tab11_5, cache = TRUE, autodep = TRUE}
+tab11_5 <- activity_hh_head_sex_function(selected_ffa_data %>% select(section_x))
+tab11_5
+```
+
+## Disaggregated by Location
+
+```{r tab11_6, cache = TRUE, autodep = TRUE}
+tab11_6 <- activity_state_function(selected_ffa_data %>% select(section_x))
+tab11_6
+```
+
+## Disaggregated by Chronic Illness
+
+```{r tab11_7, cache = TRUE, autodep = TRUE}
+tab11_7 <- activity_hh_chronic_function(selected_ffa_data %>% select(section_x))
+tab11_7
+```
+
+## Disaggregated by Disability
+
+```{r tab11_8, cache = TRUE, autodep = TRUE}
+tab11_8 <- activity_hh_disability_function(selected_ffa_data %>% select(section_x))
+tab11_8
+```
